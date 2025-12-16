@@ -73,15 +73,15 @@ app.post('/api/generate', rateLimiter, async (req, res) => {
         // Replicate expects: "data:image/png;base64,..."
         const base64Image = `data:image/png;base64,${getBase64Image(imagePath)}`;
 
-        console.log('Generating with Google Nano Banana Pro (Gemini)...');
+        console.log('Generating with Stability AI SDXL...');
 
-        const model = "google/nano-banana-pro";
+        const model = "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b7159d725ba0b4d";
 
-        // Using Replicate SDK with stream/wait
-        // Input schema correction: 'image' instead of 'image_input', and 'prompt'
+        // input schema for SDXL
         const input = {
             image: base64Image,
-            prompt: prompt,
+            prompt: prompt + ", high quality, 8k, masterpiece", // enhance prompt slightly
+            prompt_strength: 0.8, // How much to respect the prompt vs the original image
         };
 
         console.log("Starting prediction...");
