@@ -75,66 +75,34 @@ app.post('/api/generate', rateLimiter, async (req, res) => {
 
         console.log('Generating with Google Nano Banana Pro (Gemini)...');
 
-        // Using the same model and logic as reference
         const model = "google/nano-banana-pro";
 
-        // We can use the replicate SDK convenience method if it works well, 
-        // but the reference used manual fetch for specific input control. 
-        // Let's stick to the SDK if possible for cleaner code, OR stick to reference exactly if reliability is key.
-        // The reference used headers and manual fetch. I will rewrite using the SDK for cleaner implementation 
-        // UNLESS the reference comment "Manual fetch to ensure control over the input format" implies SDK issues.
-        // To be safe and respect the "Manual fetch" comment from the working reference:
+        // Using Replicate SDK with stream/wait
+        // Input schema correction: 'image' instead of 'image_input', and 'prompt'
+        const input = {
+            image: base64Image,
+            prompt: prompt,
+        };
 
-        const response = await fetch(`https://api.replicate.com/v1/models/${model}/predictions`, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.REPLICATE_API_TOKEN}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                input: {
-                    image_input: [base64Image], // Array as per reference requirement
-                    prompt: prompt,
-                    output_format: "jpg"
-                }
-            })
-        });
+        console.log("Starting prediction...");
 
-        if (!response.ok) {
-            const error = await response.json();
-            console.error('SERVER ERROR DETAIL:', error);
-            return res.status(response.status).json({ error: 'Failed to generate image', details: error });
-        }
+        const output = await replicate.run(
+            model,
+            {
+                input: input
+            }
+        );
 
-        let prediction = await response.json();
-        console.log("Prediction created:", prediction.id);
-
-        // Poll for result
-        while (prediction.status !== "succeeded" && prediction.status !== "failed" && prediction.status !== "canceled") {
-            await new Promise(r => setTimeout(r, 1000));
-            const statusRes = await fetch(prediction.urls.get, {
-                headers: {
-                    "Authorization": `Bearer ${process.env.REPLICATE_API_TOKEN}`,
-                }
-            });
-            prediction = await statusRes.json();
-        }
-
-        if (prediction.status !== "succeeded") {
-            console.error("Prediction failed:", prediction.error);
-            return res.status(500).json({ error: "Prediction failed", details: prediction.error });
-        }
-
-        const output = prediction.output;
         console.log('Generation complete:', output);
 
         // Handle return (URL or array)
+        // Usually returns an array of URIs for image models
         const resultUrl = Array.isArray(output) ? output[0] : output;
         res.json({ result: resultUrl });
 
     } catch (error) {
         console.error('SERVER ERROR DETAIL:', error);
-        res.status(500).json({ error: 'Failed to generate image', details: error.message });
+        res.status(500).json({ error: 'Failed to generate image', details: error.message || error });
     }
 });
 
