@@ -28,7 +28,7 @@ function getBase64Image(filePath) {
 
 // Simple in-memory rate limiter
 const rateLimitMap = new Map();
-const MAX_DAILY_GENERATIONS = 10; // Slightly more generous for testing? Setup as 10.
+const MAX_DAILY_GENERATIONS = 50; // Increased limit for testing
 
 const rateLimiter = (req, res, next) => {
     // Get IP address
