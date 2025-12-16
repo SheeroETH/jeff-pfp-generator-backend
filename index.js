@@ -73,19 +73,25 @@ app.post('/api/generate', rateLimiter, async (req, res) => {
         // Replicate expects: "data:image/png;base64,..."
         const base64Image = `data:image/png;base64,${getBase64Image(imagePath)}`;
 
-        console.log('Generating with Stability AI SDXL...');
+        console.log('Generating with Google Nano Banana Pro...');
 
-        const model = "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b7159d725ba0b4d";
+        const model = "google/nano-banana-pro";
 
-        // input schema for SDXL
+        // Input schema strictly matching the user's reference
         const input = {
-            image: base64Image,
-            prompt: prompt + ", high quality, 8k, masterpiece", // enhance prompt slightly
-            prompt_strength: 0.8, // How much to respect the prompt vs the original image
+            image_input: [base64Image], // Exact array format requested
+            prompt: prompt,
+            negative_prompt: "low quality, bad quality, sketches",
+            num_inference_steps: 50,
+            guidance_scale: 7.5,
+            prompt_strength: 0.8,
+            scheduler: "K_EULER_ANCESTRAL",
+            seed: Math.floor(Math.random() * 1000000)
         };
 
         console.log("Starting prediction...");
 
+        // replicate.run works fine with this model string as long as inputs are correct
         const output = await replicate.run(
             model,
             {
