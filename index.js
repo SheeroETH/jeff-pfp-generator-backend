@@ -86,7 +86,8 @@ app.post('/api/generate', rateLimiter, async (req, res) => {
             guidance_scale: 7.5,
             prompt_strength: 0.8,
             scheduler: "K_EULER_ANCESTRAL",
-            seed: Math.floor(Math.random() * 1000000)
+            seed: Math.floor(Math.random() * 1000000),
+            output_format: "jpg"
         };
 
         console.log("Starting prediction...");
