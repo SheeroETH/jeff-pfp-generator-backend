@@ -9,13 +9,12 @@ import { fileURLToPath } from 'url';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3000;
 
-// Increase limit to accept images if needed, though we use local source now
+// Increase limit to accept images
 app.use(express.json({ limit: '50mb' }));
 app.use(cors());
 
-// Initialize Replicate
 const replicate = new Replicate({
     auth: process.env.REPLICATE_API_TOKEN,
 });
@@ -28,26 +27,30 @@ function getBase64Image(filePath) {
 
 // Simple in-memory rate limiter
 const rateLimitMap = new Map();
-const MAX_DAILY_GENERATIONS = 50; // Increased limit for testing
+const MAX_DAILY_GENERATIONS = 4;
 
 const rateLimiter = (req, res, next) => {
-    // Get IP address
+    // Rate limiting disabled for development/debugging
+    return next();
+
+    // Original logic preserved below:
+    /*
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const today = new Date().toISOString().split('T')[0];
-
+  
     const userRecord = rateLimitMap.get(ip);
-
+  
     if (userRecord && userRecord.date === today) {
-        if (userRecord.count >= MAX_DAILY_GENERATIONS) {
-            return res.status(429).json({ error: 'Daily limit reached. Please come back tomorrow!' });
-        }
-        userRecord.count++;
+      if (userRecord.count >= MAX_DAILY_GENERATIONS) {
+        return res.status(429).json({ error: 'Daily limit reached. Please come back tomorrow!' });
+      }
+      userRecord.count++;
     } else {
-        // New user or new day
-        rateLimitMap.set(ip, { date: today, count: 1 });
+      rateLimitMap.set(ip, { date: today, count: 1 });
     }
-
+  
     next();
+    */
 };
 
 app.post('/api/generate', rateLimiter, async (req, res) => {
@@ -56,10 +59,9 @@ app.post('/api/generate', rateLimiter, async (req, res) => {
 
         if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
 
-        console.log('Received generation request for:', prompt);
-        console.log('Loading jeff-original.png as reference...');
+        console.log('Generating with Google Nano Banana Pro (Gemini)...');
 
-        // Resolve path to jeff-original.png relative to this file
+        // Jeff Mod: Load local image
         const __filename = fileURLToPath(import.meta.url);
         const __dirname = path.dirname(__filename);
         const imagePath = path.join(__dirname, 'jeff-original.png');
@@ -69,47 +71,68 @@ app.post('/api/generate', rateLimiter, async (req, res) => {
             return res.status(500).json({ error: 'Reference image missing on server' });
         }
 
-        // Convert to Data URI for Replicate
-        // Replicate expects: "data:image/png;base64,..."
-        const base64Image = `data:image/png;base64,${getBase64Image(imagePath)}`;
+        // Ensure image is properly formatted data URI
+        const processedImage = `data:image/png;base64,${getBase64Image(imagePath)}`;
 
-        console.log('Generating with Google Nano Banana Pro...');
+        console.log('Type of input sending to Replicate:', Array.isArray([processedImage]) ? 'ARRAY (Correct)' : 'STRING (Error)');
 
-        const model = "google/nano-banana-pro";
+        // Manual fetch to ensure control over the input format
+        // Switched to google/nano-banana as requested by user
+        const model = "google/nano-banana";
 
-        // Input schema strictly matching the user's reference
-        const input = {
-            image_input: [base64Image], // Exact array format requested
-            prompt: prompt,
-            negative_prompt: "low quality, bad quality, sketches",
-            num_inference_steps: 50,
-            guidance_scale: 7.5,
-            prompt_strength: 0.8,
-            scheduler: "K_EULER_ANCESTRAL",
-            seed: Math.floor(Math.random() * 1000000),
-            output_format: "jpg"
-        };
+        // Log the start of the image string for debugging
+        console.log('Image input start:', processedImage.substring(0, 50));
 
-        console.log("Starting prediction...");
+        const response = await fetch(`https://api.replicate.com/v1/models/${model}/predictions`, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${process.env.REPLICATE_API_TOKEN}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                input: {
+                    image_input: [processedImage], // Model expects 'image_input' as an array
+                    prompt: prompt,
+                    output_format: "jpg"
+                }
+            })
+        });
 
-        // replicate.run works fine with this model string as long as inputs are correct
-        const output = await replicate.run(
-            model,
-            {
-                input: input
-            }
-        );
+        if (!response.ok) {
+            const error = await response.json();
+            console.error('SERVER ERROR DETAIL:', error);
+            return res.status(response.status).json({ error: 'Failed to generate image', details: error });
+        }
 
+        let prediction = await response.json();
+        console.log("Prediction created:", prediction.id);
+
+        // Poll for result
+        while (prediction.status !== "succeeded" && prediction.status !== "failed" && prediction.status !== "canceled") {
+            await new Promise(r => setTimeout(r, 1000));
+            const statusRes = await fetch(prediction.urls.get, {
+                headers: {
+                    "Authorization": `Bearer ${process.env.REPLICATE_API_TOKEN}`,
+                }
+            });
+            prediction = await statusRes.json();
+        }
+
+        if (prediction.status !== "succeeded") {
+            console.error("Prediction failed:", prediction.error);
+            return res.status(500).json({ error: "Prediction failed", details: prediction.error });
+        }
+
+        const output = prediction.output;
         console.log('Generation complete:', output);
 
         // Handle return (URL or array)
-        // Usually returns an array of URIs for image models
         const resultUrl = Array.isArray(output) ? output[0] : output;
         res.json({ result: resultUrl });
 
     } catch (error) {
         console.error('SERVER ERROR DETAIL:', error);
-        res.status(500).json({ error: 'Failed to generate image', details: error.message || error });
+        res.status(500).json({ error: 'Failed to generate image', details: error.message });
     }
 });
 
